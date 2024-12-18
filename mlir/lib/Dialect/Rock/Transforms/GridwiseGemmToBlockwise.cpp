@@ -2550,11 +2550,15 @@ struct GridwiseGemmAccelRewritePattern
     // Obtain data types of inputs.
     auto elementTypeA = op.getA().getType().getElementType();
     auto maybeElementTypeALoad = getGemmInputElementType(op.getA());
-    auto elementTypeALoad = failed(maybeElementTypeALoad) ? elementTypeA : maybeElementTypeALoad.value();
-    
+    auto elementTypeALoad = failed(maybeElementTypeALoad)
+                                ? elementTypeA
+                                : maybeElementTypeALoad.value();
+
     auto elementTypeB = op.getB().getType().getElementType();
     auto maybeElementTypeBLoad = getGemmInputElementType(op.getB());
-    auto elementTypeBLoad = failed(maybeElementTypeBLoad) ? elementTypeB : maybeElementTypeBLoad.value();
+    auto elementTypeBLoad = failed(maybeElementTypeBLoad)
+                                ? elementTypeB
+                                : maybeElementTypeBLoad.value();
     auto destType = op.getC().getType().getElementType();
 
     // Prepare some useful constants.
