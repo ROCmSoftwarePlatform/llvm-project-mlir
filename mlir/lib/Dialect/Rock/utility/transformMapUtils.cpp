@@ -1327,7 +1327,7 @@ Value mlir::rock::insertTransposeAndBroadcastTransforms(
 }
 
 LogicalResult
-mlir::rock::makeLinalgGenericWithIdentityAffMaps(PatternRewriter &b,
+mlir::rock::makeLinalgGenericWithIdentityAffMaps(PatternRewriter &rw,
                                                  linalg::GenericOp laOp) {
   auto idxMaps = laOp.getIndexingMapsArray();
   auto outIdxMap = idxMaps.back();
@@ -1348,16 +1348,16 @@ mlir::rock::makeLinalgGenericWithIdentityAffMaps(PatternRewriter &b,
         auto invertOutIdxMap = inversePermutation(outIdxMap);
         auto outToInpMap = imap.compose(invertOutIdxMap);
         Value regInp = rock::insertTransposeAndBroadcastTransforms(
-            b, outType.getShape(), inp, outToInpMap);
+            rw, outType.getShape(), inp, outToInpMap);
         laOp->replaceUsesOfWith(inp, regInp);
       }
     }
   }
 
   // reset idxmaps
-  b.modifyOpInPlace(laOp, [&]() {
+  rw.modifyOpInPlace(laOp, [&]() {
     SmallVector<AffineMap, 5> newIdxMaps(idxMaps.size(), outIdxMap);
-    laOp.setIndexingMapsAttr(b.getAffineMapArrayAttr(newIdxMaps));
+    laOp.setIndexingMapsAttr(rw.getAffineMapArrayAttr(newIdxMaps));
   });
 
   return success();

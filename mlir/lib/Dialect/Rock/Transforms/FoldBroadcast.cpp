@@ -24,6 +24,7 @@
 #include "mlir/Dialect/Rock/utility/transformMapUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Utils/ReshapeOpsUtils.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -250,9 +251,30 @@ struct FoldTransformBroadcast : public OpRewritePattern<rock::TransformOp> {
         newInputs.push_back(input);
       }
     }
-    rw.modifyOpInPlace(laGenericOp, [&]() {
-      laGenericOp.getInputsMutable().assign(newInputs);
-    });
+    newAffineMaps.push_back(laIndexingMaps.back());
+    tensor::EmptyOp outTensor = dyn_cast<tensor::EmptyOp>(
+        (*laGenericOp.getOutputs().begin()).getDefiningOp());
+
+    Value outputTensor = rw.create<tensor::EmptyOp>(
+        laGenericOp->getLoc(), outTensor.getMixedSizes(),
+        outTensor.getType().getElementType());
+    llvm::errs() << "new out tensor is:\n";
+    outputTensor.dump();
+
+    linalg::GenericOp newlaGenericOp = rw.create<linalg::GenericOp>(
+        laGenericOp->getLoc(), outputTensor.getType(), ValueRange{newInputs},
+        ValueRange{outputTensor}, newAffineMaps,
+        laGenericOp.getIteratorTypesArray());
+    newlaGenericOp.getRegion().takeBody(laGenericOp->getRegion(0));
+
+    rw.replaceOp(laGenericOp, newlaGenericOp);
+    // rw.modifyOpInPlace(laGenericOp, [&]() {
+    //   laGenericOp.setIndexingMapsAttr(rw.getAffineMapArrayAttr(newAffineMaps));
+    // });
+
+    // rw.modifyOpInPlace(laGenericOp, [&]() {
+    //   laGenericOp.getInputsMutable().assign(newInputs);
+    // });
 
     rw.eraseOp(op);
     return success();
