@@ -258,8 +258,6 @@ struct FoldTransformBroadcast : public OpRewritePattern<rock::TransformOp> {
     Value outputTensor = rw.create<tensor::EmptyOp>(
         laGenericOp->getLoc(), outTensor.getMixedSizes(),
         outTensor.getType().getElementType());
-    llvm::errs() << "new out tensor is:\n";
-    outputTensor.dump();
 
     linalg::GenericOp newlaGenericOp = rw.create<linalg::GenericOp>(
         laGenericOp->getLoc(), outputTensor.getType(), ValueRange{newInputs},
@@ -268,14 +266,6 @@ struct FoldTransformBroadcast : public OpRewritePattern<rock::TransformOp> {
     newlaGenericOp.getRegion().takeBody(laGenericOp->getRegion(0));
 
     rw.replaceOp(laGenericOp, newlaGenericOp);
-    // rw.modifyOpInPlace(laGenericOp, [&]() {
-    //   laGenericOp.setIndexingMapsAttr(rw.getAffineMapArrayAttr(newAffineMaps));
-    // });
-
-    // rw.modifyOpInPlace(laGenericOp, [&]() {
-    //   laGenericOp.getInputsMutable().assign(newInputs);
-    // });
-
     rw.eraseOp(op);
     return success();
   }
