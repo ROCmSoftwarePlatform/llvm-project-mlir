@@ -217,6 +217,48 @@ struct FoldBroadcast : public OpRewritePattern<rock::GemmOp> {
   }
 };
 
+struct FoldTransformBroadcast : public OpRewritePattern<rock::TransformOp> {
+  using OpRewritePattern<rock::TransformOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(rock::TransformOp op,
+                                PatternRewriter &rw) const override {
+    if (not dyn_cast<linalg::GenericOp>(*op->getUsers().begin())) {
+      return failure();
+    }
+    rock::TransformMapAttr transMap = op.getTransformAttr();
+    // TODO(umang) add checks that it is broadcasting dimension of bound 1
+    if (llvm::any_of(transMap.getOps(), [](rock::TransformAttr transformType) {
+          return transformType.getType() != rock::TransformType::PassThrough and
+                 transformType.getType() != rock::TransformType::Broadcast;
+        }))
+      return failure();
+
+    linalg::GenericOp laGenericOp =
+        dyn_cast_or_null<linalg::GenericOp>(*op->getUsers().begin());
+    if (!laGenericOp) {
+      return failure();
+    }
+    SmallVector<Value, 4> newInputs;
+    auto laIndexingMaps = laGenericOp.getIndexingMapsArray();
+    SmallVector<AffineMap, 4> newAffineMaps;
+    for (auto [idx, input] : llvm::enumerate(laGenericOp.getInputs())) {
+      if (dyn_cast<rock::TransformOp>(input.getDefiningOp()) == op) {
+        newAffineMaps.push_back(transMap.getMap().getAffineMap());
+        newInputs.push_back(op.getInput());
+      } else {
+        newAffineMaps.push_back(laIndexingMaps[idx]);
+        newInputs.push_back(input);
+      }
+    }
+    rw.modifyOpInPlace(laGenericOp, [&]() {
+      laGenericOp.getInputsMutable().assign(newInputs);
+    });
+
+    rw.eraseOp(op);
+    return success();
+  }
+};
+
 struct RockFoldBroadcastPass
     : public rock::impl::RockFoldBroadcastPassBase<RockFoldBroadcastPass> {
   void runOnOperation() override;
@@ -233,7 +275,7 @@ void RockFoldBroadcastPass::runOnOperation() {
 
   {
     RewritePatternSet patterns(ctx);
-    patterns.add<FoldBroadcast>(ctx);
+    patterns.add<FoldBroadcast, FoldTransformBroadcast>(ctx);
     if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns))))
       signalPassFailure();
   }
