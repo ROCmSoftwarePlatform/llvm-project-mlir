@@ -135,6 +135,8 @@ struct RegularizeGenericRewritePattern
     LogicalResult lres = failure();
 
     // parallel
+    llvm::errs() << "linalg generic op matched is \n";
+    lgop.dump();
     for (utils::IteratorType iterType : lgop.getIteratorTypesArray()) {
       if (!linalg::isParallelIterator(iterType))
         return lgop.emitError("Only fully parallel supported");
@@ -142,6 +144,8 @@ struct RegularizeGenericRewritePattern
 
     // apply transforms to inputs
     lres = makeLinalgGenericWithIdentityAffMaps(rw, lgop);
+    llvm::errs() << "after applying transforom: \n";
+    lgop.dump();
     return lres;
   }
 };
@@ -680,6 +684,7 @@ void RockRegularizePass::runOnOperation() {
   }
 
   {
+    llvm::errs() << "dependence analysis now\n";
     auto &bufferDeps = getAnalysis<BufferDependencyAnalysis>();
     if (failed(runPushTransformsUp(func, bufferDeps)))
       return signalPassFailure();

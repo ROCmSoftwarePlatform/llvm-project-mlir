@@ -1339,6 +1339,7 @@ mlir::rock::makeLinalgGenericWithIdentityAffMaps(PatternRewriter &rw,
   auto outType = cast<ShapedType>(out.getType());
 
   SmallVector<Value> inps(laOp.getInputs());
+  SmallVector<AffineMap> newIdxMaps;
   for (auto pair : llvm::zip(inps, idxMaps)) {
     if (auto inp = std::get<0>(pair)) {
       auto imap = std::get<1>(pair);
@@ -1347,16 +1348,25 @@ mlir::rock::makeLinalgGenericWithIdentityAffMaps(PatternRewriter &rw,
         // inject a broadcast
         auto invertOutIdxMap = inversePermutation(outIdxMap);
         auto outToInpMap = imap.compose(invertOutIdxMap);
+        llvm::errs() << "outToInpMap: \n";
+        outToInpMap.dump();
         Value regInp = rock::insertTransposeAndBroadcastTransforms(
             rw, outType.getShape(), inp, outToInpMap);
+        llvm::errs() << "regInp: \n";
+        regInp.dump();
         laOp->replaceUsesOfWith(inp, regInp);
+        auto regInpTransformMap =
+            dyn_cast<rock::TransformOp>(regInp.getDefiningOp());
+        newIdxMaps.push_back(
+            regInpTransformMap.getTransformAttr().getMap().getAffineMap());
+      } else {
+        newIdxMaps.push_back(imap);
       }
     }
   }
-
+  newIdxMaps.push_back(outIdxMap);
   // reset idxmaps
   rw.modifyOpInPlace(laOp, [&]() {
-    SmallVector<AffineMap, 5> newIdxMaps(idxMaps.size(), outIdxMap);
     laOp.setIndexingMapsAttr(rw.getAffineMapArrayAttr(newIdxMaps));
   });
 
