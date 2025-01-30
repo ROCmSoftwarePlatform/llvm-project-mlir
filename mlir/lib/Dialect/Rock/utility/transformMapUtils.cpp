@@ -1366,6 +1366,7 @@ mlir::rock::makeLinalgGenericWithIdentityAffMaps(PatternRewriter &rw,
 TransformMapAttr mlir::rock::invertTransformMap(
     OpBuilder &b, mlir::rock::TransformMapAttr transformMap, Location loc) {
   ArrayRef<int64_t> lowShape = transformMap.getLowerBounds();
+  ArrayRef<int64_t> upperShape = transformMap.getUpperBounds();
   llvm::IndexedMap<StringRef> lowNamesMap;
   if (!lowShape.empty())
     lowNamesMap.grow(lowShape.size() - 1); // grow takes largest index;
@@ -1380,9 +1381,8 @@ TransformMapAttr mlir::rock::invertTransformMap(
   for (size_t i = 0, e = lowNamesMap.size(); i < e; ++i) {
     lowNames.push_back(lowNamesMap[i]);
   }
-
   rock::TopDownTMBuilder transform(b, lowNames, lowShape, loc);
-  for (auto tattr : transformMap.getOps()) {
+  for (auto [idx, tattr] : llvm::enumerate(transformMap.getOps())) {
     switch (tattr.getType()) {
     case rock::TransformType::PassThrough:
       transform.passThrough(tattr.getUpperNames(), tattr.getUpperDims(),
@@ -1390,9 +1390,15 @@ TransformMapAttr mlir::rock::invertTransformMap(
       break;
     case rock::TransformType::Pad:
     case rock::TransformType::Slice:
-    case rock::TransformType::Embed:
-    case rock::TransformType::Broadcast: // Unsupported
+    case rock::TransformType::Embed: // Unsupported
       return rock::TransformMapAttr();
+    case rock::TransformType::Broadcast:
+      for (size_t i = 0, e = tattr.getUpperDims().size(); i < e; ++i) {
+        // Only adding in constant unit dimensions is invertible
+        transform.constDim(tattr.getUpperNames()[i], tattr.getUpperDims()[i],
+                           /*constantVal=*/0, /*lowerSize=*/upperShape[idx]);
+      }
+      break;
     case rock::TransformType::AddDim:
       if (tattr.getParams()[0] != 1)
         // AddDim of length > 1 has no coherent inverse.
@@ -1418,7 +1424,6 @@ TransformMapAttr mlir::rock::invertTransformMap(
       break;
     }
   }
-
   return transform.get();
 }
 
