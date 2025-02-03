@@ -24,6 +24,7 @@
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/PatternMatch.h"
@@ -1218,10 +1219,16 @@ struct AttentionRewritePattern : public OpRewritePattern<tosa::MatMulOp> {
       return failure();
     }
 
-    Value softmaxInput;
+    Value softmaxInput, currentSeqLen;
     bool hasReduceOp;
-    std::tie(softmaxInput, hasReduceOp, std::ignore) =
+    std::tie(softmaxInput, hasReduceOp, currentSeqLen) =
         softmaxInputResult.value();
+
+    // currentSeqLen needs one or two dimensions
+    if (currentSeqLen &&
+        cast<ShapedType>(currentSeqLen.getType()).getRank() > 2)
+      return failure();
+
     OpBuilder b{op};
     SmallVector<Value> vec;
     FailureOr<tosa::MatMulOp> maybeFirstMatMul;
@@ -1271,6 +1278,14 @@ struct AttentionRewritePattern : public OpRewritePattern<tosa::MatMulOp> {
     tosa::MatMulOp firstMatMulOp = maybeFirstMatMul.value();
     IntegerAttr numCUAttr =
         numCu.has_value() ? rewriter.getI32IntegerAttr(numCu.value()) : nullptr;
+
+    // Reshape currentSeqLen {batch, numHeads} -> {batch * numHeads}
+    if (currentSeqLen &&
+        cast<ShapedType>(currentSeqLen.getType()).getRank() == 2) {
+      SmallVector<ReassociationIndices> reassocIndices = {{0, 1}};
+      currentSeqLen = rewriter.create<tensor::CollapseShapeOp>(
+          op.getLoc(), currentSeqLen, reassocIndices);
+    }
 
     rock::AttentionOp attnOp = rewriter.create<rock::AttentionOp>(
         loc, outputType, firstMatMulOp.getA(), firstMatMulOp.getB(), op.getB(),

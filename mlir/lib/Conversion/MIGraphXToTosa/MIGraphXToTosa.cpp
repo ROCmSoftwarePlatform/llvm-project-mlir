@@ -1189,9 +1189,27 @@ LiteralConverter::matchAndRewrite(migraphx::LiteralOp op, OpAdaptor adaptor,
       // value bytes
       value = SplatElementsAttr::get(newType, newSplatValue);
     } else {
-      // Reinterpret existing values under the new type
-      auto originalAttr = cast<mlir::DenseElementsAttr>(value);
-      value = DenseElementsAttr::get(newType, originalAttr.getRawData());
+      // For non-splat attributes, we need to convert each element to the new
+      // type
+      SmallVector<Attribute> convertedElements;
+      convertedElements.reserve(value.getNumElements());
+
+      for (auto it : value.getValues<Attribute>()) {
+        Attribute convertedElement;
+        if (auto intAttr = dyn_cast<IntegerAttr>(it))
+          convertedElement =
+              IntegerAttr::get(newType.getElementType(), intAttr.getValue());
+        else if (auto floatAttr = dyn_cast<FloatAttr>(it))
+          convertedElement =
+              FloatAttr::get(newType.getElementType(), floatAttr.getValue());
+        else
+          return failure();
+
+        convertedElements.push_back(convertedElement);
+      }
+
+      // Create a new DenseElementsAttr with the converted elements and new type
+      value = DenseElementsAttr::get(newType, convertedElements);
     }
   }
 
@@ -1241,7 +1259,8 @@ LogicalResult GreaterOrEqualConverter::matchAndRewrite(
       RankedTensorType::get(op.getType().getShape(), rewriter.getI1Type());
   auto goe = rewriter.createOrFold<tosa::GreaterEqualOp>(op->getLoc(), newType,
                                                          inA, inB);
-  rewriter.replaceOpWithNewOp<tosa::CastOp>(op, op.getType().asTensor(), goe);
+  rewriter.replaceOpWithNewOp<tosa::CastOp>(op, adaptor.getInA().getType(),
+                                            goe);
 
   return success();
 }
