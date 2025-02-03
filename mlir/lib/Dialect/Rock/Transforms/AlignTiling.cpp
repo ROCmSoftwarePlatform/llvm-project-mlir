@@ -939,9 +939,9 @@ LAGenericRewritePattern::matchAndRewrite(linalg::GenericOp laGeneric,
     return b.notifyMatchFailure(loc,
                                 "encountered already-processed fusion op\n");
 
-  for (auto idxMap : laGeneric.getIndexingMapsArray())
-    if (!idxMap.isIdentity())
-      return b.notifyMatchFailure(loc, "indexing_maps must all be identity");
+  // for (auto idxMap : laGeneric.getIndexingMapsArray())
+  //   if (!idxMap.isIdentity())
+  //     return b.notifyMatchFailure(loc, "indexing_maps must all be identity");
 
   // 1. Find the tiling needed for this linalg generic.
   // 1.1. Find the (implicit) gemm output, if it exists.
@@ -1020,8 +1020,9 @@ LAGenericRewritePattern::matchAndRewrite(linalg::GenericOp laGeneric,
   }
   auto outType = cast<ShapedType>(out.getType());
   auto inpType = cast<ShapedType>(laGenericArgLeadingToTile.getType());
+  int64_t broadcastingFactor = 1;
   if (outType.getShape() != inpType.getShape()) {
-    return laGeneric.emitError("input and output types must match");
+    broadcastingFactor = outType.getNumElements() / inpType.getNumElements();
   }
 
   // 3. The typical case, where there's in inputh that traced back to a
@@ -1038,10 +1039,14 @@ LAGenericRewritePattern::matchAndRewrite(linalg::GenericOp laGeneric,
 
   Value gemmOutRegs = gemmStoreOp.getSource();
   auto gemmOutType = cast<MemRefType>(gemmOutRegs.getType());
-
   // 3.1. Make an allocation that matches the tile but has the type of the
   // linalg.generic output.
   MemRefType::Builder mrb(gemmOutType);
+  if (broadcastingFactor != 1) {
+    assert(gemmOutType.getShape().size() == 1);
+    mrb.setShape({broadcastingFactor * gemmOutType.getShape().front()});
+  }
+
   Value laOutRegs = makeRegs(b, mrb, loc, getElementTypeOrSelf(out.getType()));
 
   // 3.2. Tile linalg.generic with vgpr as input, return output vgprs

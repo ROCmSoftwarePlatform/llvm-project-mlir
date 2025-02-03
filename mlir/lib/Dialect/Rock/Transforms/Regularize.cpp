@@ -116,10 +116,10 @@ static bool isRegularGeneric(linalg::GenericOp lgop) {
     return false; //"Only output identity map supported"
   }
 
-  for (auto idxMap : idxMaps) {
-    if (idxMap != outIdxMap)
-      return false; //"Must be same index maps"
-  }
+  // for (auto idxMap : idxMaps) {
+  //   if (idxMap != outIdxMap)
+  //     return false; //"Must be same index maps"
+  // }
   return true;
 }
 
