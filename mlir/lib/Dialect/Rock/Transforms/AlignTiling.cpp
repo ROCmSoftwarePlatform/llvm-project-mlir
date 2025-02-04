@@ -939,9 +939,9 @@ LAGenericRewritePattern::matchAndRewrite(linalg::GenericOp laGeneric,
     return b.notifyMatchFailure(loc,
                                 "encountered already-processed fusion op\n");
 
-  // for (auto idxMap : laGeneric.getIndexingMapsArray())
-  //   if (!idxMap.isIdentity())
-  //     return b.notifyMatchFailure(loc, "indexing_maps must all be identity");
+  for (auto idxMap : laGeneric.getIndexingMapsArray())
+    if (!idxMap.isIdentity())
+      return b.notifyMatchFailure(loc, "indexing_maps must all be identity");
 
   // 1. Find the tiling needed for this linalg generic.
   // 1.1. Find the (implicit) gemm output, if it exists.
@@ -949,6 +949,8 @@ LAGenericRewritePattern::matchAndRewrite(linalg::GenericOp laGeneric,
   SmallVector<TransformMapAttr> globalCoordsToGenericViews;
   Value laGenericArgLeadingToTile =
       findThreadwiseWrite(laGeneric, gemmStoreOp, globalCoordsToGenericViews);
+  llvm::errs() << "laGenericArgLeadingToTile: \n";
+  laGenericArgLeadingToTile.dump();
 
   if (gemmStoreOp) {
     if (gemmStoreOp.getStoreMethod() != rock::StoreMethod::Set) {
@@ -1658,12 +1660,101 @@ ReduceRewritePattern::matchAndRewrite(rock::ReduceOp reduceOp,
   return success();
 }
 
+struct RewriteThreadWiseWrite : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(linalg::GenericOp op,
+                                PatternRewriter &rw) const override {
+    SmallVector<rock::TransformMapAttr> transforms;
+    // if (!op->hasOneUse()) {
+    //   llvm::errs() << "Failed 1\n";
+    //   return failure();
+    // }
+    Value allocOp;
+    rock::ThreadwiseWriteAllOp twwop;
+    rock::TransformOp transOp;
+    auto inputs = op.getInputs();
+    for (auto input : inputs) {
+      while (input.getDefiningOp<rock::TransformOp>()) {
+        transOp = input.getDefiningOp<rock::TransformOp>();
+        input = transOp.getInput();
+      }
+      if (input.getDefiningOp<memref::AllocOp>()) {
+        for (Operation *user : input.getUsers()) {
+          if ((dyn_cast<rock::ThreadwiseWriteAllOp>(*user))) {
+            llvm::errs() << "Found twwop\n";
+            twwop = dyn_cast<rock::ThreadwiseWriteAllOp>(*user);
+            allocOp = input;
+            break;
+          }
+        }
+      }
+      if (twwop) {
+        break;
+      }
+    }
+
+    if (!allocOp or !twwop) {
+      llvm::errs() << "Failed 2\n";
+      return failure();
+    }
+    if (!transOp) {
+      llvm::errs() << "Failed 3\n";
+      return failure();
+    }
+    transforms.push_back(transOp.getTransformAttr());
+    while (transOp->hasOneUse() and
+           dyn_cast<rock::TransformOp>(*transOp->getUsers().begin())) {
+      transOp = dyn_cast<rock::TransformOp>(*transOp->getUsers().begin());
+      transforms.push_back(transOp.getTransformAttr());
+    }
+
+    auto oldAlloc = twwop.getDest();
+    if (oldAlloc != allocOp) {
+      llvm::errs() << "Dest and allocop are not the same\n";
+    }
+    auto newAlloc = rw.create<memref::AllocOp>(
+        allocOp.getLoc(), cast<MemRefType>(transOp.getType()));
+    allocOp.replaceAllUsesWith(newAlloc);
+    ArrayAttr extraViews = twwop.getExtraViews();
+    SmallVector<Attribute, 8> newViews;
+    for (auto extraMaps : extraViews) {
+      newViews.push_back(extraMaps);
+    }
+    for (auto extraMaps : transforms) {
+      newViews.push_back(extraMaps);
+    }
+    ArrayRef<Attribute> arrayRef(newViews);
+    auto newArrayAttr = rw.getArrayAttr(arrayRef);
+    auto newThreadwiseWriteAllOp = rw.create<ThreadwiseWriteAllOp>(
+        twwop.getLoc(), twwop.getSource(), newAlloc, newArrayAttr,
+        /*extraIndices=*/
+        twwop.getExtraIndices(), twwop.getFeatures(), twwop.getStoreMethod(),
+        twwop.getForceUnroll(), twwop.getUseIndexDiffs());
+
+    // rw.eraseOp(op.getDest());
+    rw.replaceOp(twwop, newThreadwiseWriteAllOp);
+    op->setOperand(0, newThreadwiseWriteAllOp.getDest());
+    // rw.eraseOp(oldAlloc.getDefiningOp());
+    return success();
+  }
+};
+
 void RockLinalgAlignPass::runOnOperation() {
   MLIRContext *ctx = &getContext();
   func::FuncOp func = getOperation();
   // Only run this pass on GPU kernel functions.
   if (!func->hasAttr("kernel"))
     return;
+  // {
+  //   RewritePatternSet patterns(ctx);
+  //   patterns.add<RewriteThreadWiseWrite>(ctx);
+  //   if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns))))
+  //     signalPassFailure();
+  //   llvm::errs() << "After applying threadwise rewrite\n";
+  //   func->dump();
+  // }
+
   {
     BufferDependencyAnalysis &bufferDeps =
         getAnalysis<BufferDependencyAnalysis>();

@@ -20,6 +20,7 @@
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Rock/IR/Rock.h"
+#include "mlir/Dialect/Rock/IR/RockTypes.h"
 #include "mlir/Dialect/Rock/Passes.h"
 #include "mlir/Dialect/Rock/utility/transformMapUtils.h"
 
@@ -547,7 +548,21 @@ static LogicalResult pushTransformsUp(memref::AllocOp allocOp,
     Value maybeTransformedBuffer = readOperand->get();
     if (!maybeTransformedBuffer.getDefiningOp<rock::TransformOp>()) {
       continue;
+      // } else {
+      //   rock::TransformOp rtop =
+      //       maybeTransformedBuffer.getDefiningOp<rock::TransformOp>();
+      //   rock::TransformMapAttr transMap = rtop.getTransformAttr();
+      //   bool isBroadcast = false;
+      //   for (auto ops : transMap.getOps()) {
+      //     if (ops.getType() == rock::TransformType::Broadcast) {
+      //       isBroadcast = true;
+      //     }
+      //   }
+      //   if (isBroadcast) {
+      //     continue;
+      //   }
     }
+
     if (readOperandWithTransforms && readOperandWithTransforms != readOperand)
       return isolateMultipleTransformingReaders(
           allocOp, writeOperand->getOwner(), bufferDeps, readOperands, state,

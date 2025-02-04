@@ -287,7 +287,7 @@ void RockFoldBroadcastPass::runOnOperation() {
 
   {
     RewritePatternSet patterns(ctx);
-    patterns.add<FoldBroadcast, FoldTransformBroadcast>(ctx);
+    patterns.add<FoldBroadcast>(ctx);
     if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns))))
       signalPassFailure();
   }
