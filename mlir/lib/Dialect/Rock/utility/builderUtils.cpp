@@ -42,11 +42,12 @@ Value createConstantIntOp(OpBuilder &b, Location loc, Type type,
 Value createConstantFloatOp(OpBuilder &b, Location loc, Type type,
                             Type elemType, float value,
                             APFloat::opStatus expectedStatus) {
-  const llvm::fltSemantics &semantics = cast<FloatType>(elemType).getFloatSemantics();
+  const llvm::fltSemantics &semantics =
+      cast<FloatType>(elemType).getFloatSemantics();
   APFloat apValue(value);
   bool lostInfo = false;
-  auto status = apValue.convert(semantics,
-                                APFloat::rmNearestTiesToEven, &lostInfo);
+  auto status =
+      apValue.convert(semantics, APFloat::rmNearestTiesToEven, &lostInfo);
 
   assert(status == expectedStatus);
   Value retValue;
