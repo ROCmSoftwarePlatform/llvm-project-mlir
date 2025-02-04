@@ -62,8 +62,13 @@ def generate_op_variants_test(indir, outdir, type, file, opspec):
 def generate_type_only_test(indir, outdir, type, file):
     archNames = getArch()
     arch = ','.join(archNames)
-    # Use f32 instead of bf16 for certain tests because bf16 is not supported as an accumulation type for tosa.conv2d.
-    gen_type = 'f32' if type == 'bf16' and file in ['tosa-to-rock-bcast-add', 'tosa-to-rock-bias'] else type
+    # Use f32 instead of f16, bf16 and use i32 for i8 as an accumulation type for tosa.conv2d.
+    if type in ['f32', 'f16', 'bf16']:
+        gen_type = 'f32'
+    elif type in['i32', 'i8']:
+        gen_type = 'i32'
+    else:
+        raise Exception("Unsupported type '{type}'")
     if "bf16" in type and "gfx11" in arch:
         return
     with open(f"{indir}/{file}.e2e.template") as f:
