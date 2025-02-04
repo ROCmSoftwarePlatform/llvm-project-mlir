@@ -65,7 +65,7 @@ def generate_type_only_test(indir, outdir, type, file):
     # Use f32 instead of f16, bf16 and use i32 for i8 as an accumulation type for tosa.conv2d.
     if type in ['f32', 'f16', 'bf16']:
         gen_type = 'f32'
-    elif type in['i32', 'i8']:
+    elif type in ['i32', 'i8']:
         gen_type = 'i32'
     else:
         raise Exception("Unsupported type '{type}'")
