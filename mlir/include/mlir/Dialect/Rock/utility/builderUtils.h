@@ -10,7 +10,7 @@
 namespace mlir {
 namespace rock {
 // Utility to create an APInt of the requested type
-std::pair<APInt, bool> createAPInt(Type elemType, int32_t value);
+FailureOr<APInt> createAPInt(Type elemType, int64_t value);
 
 // Utility to create an APFloat of the requested type
 std::pair<APFloat, llvm::detail::opStatus> createAPFloat(Type elemType,

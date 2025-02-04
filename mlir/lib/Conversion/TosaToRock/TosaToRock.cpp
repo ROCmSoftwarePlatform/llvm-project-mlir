@@ -100,48 +100,49 @@ static bool isConstIsNegInf(Value v) {
   return false;
 }
 
-static bool isConstRangeAttribute(Attribute value, int32_t expectedVal) {
+static bool isIntAttrSame(Attribute value, int64_t expectedVal) {
   if (auto intValue = dyn_cast<IntegerAttr>(value)) {
     auto value = intValue.getValue();
 
-    std::pair<APInt, bool> intRes =
+    FailureOr<APInt> intRes =
         rock::createAPInt(intValue.getType(), expectedVal);
-    auto expectedValue = intRes.first;
-    bool overflow = intRes.second;
-    if (overflow)
+    if (failed(intRes))
       return false;
 
-    return expectedValue == value;
+    return intRes.value() == value;
   }
+  return false;
+}
+
+static bool isConstRangeAttribute(Attribute value) {
   if (auto splatValue = dyn_cast<SplatElementsAttr>(value))
     return false;
   if (auto elementsValue = dyn_cast<ElementsAttr>(value))
     return llvm::all_of(llvm::enumerate(elementsValue.getValues<Attribute>()),
                         [](const auto &indexedAttr) {
-                          return isConstRangeAttribute(indexedAttr.value(),
-                                                       indexedAttr.index());
+                          return isIntAttrSame(indexedAttr.value(),
+                                               indexedAttr.index());
                         });
   if (auto elementsValue = dyn_cast<DenseElementsAttr>(value))
     return llvm::all_of(llvm::enumerate(elementsValue.getValues<Attribute>()),
                         [](const auto &indexedAttr) {
-                          return isConstRangeAttribute(indexedAttr.value(),
-                                                       indexedAttr.index());
+                          return isIntAttrSame(indexedAttr.value(),
+                                               indexedAttr.index());
                         });
   if (auto arrayValue = dyn_cast<ArrayAttr>(value))
-    return llvm::all_of(llvm::enumerate(arrayValue.getValue()),
-                        [](const auto &indexedAttr) {
-                          return isConstRangeAttribute(indexedAttr.value(),
-                                                       indexedAttr.index());
-                        });
+    return llvm::all_of(
+        llvm::enumerate(arrayValue.getValue()), [](const auto &indexedAttr) {
+          return isIntAttrSame(indexedAttr.value(), indexedAttr.index());
+        });
 
   return false;
 }
 
 bool isConstRange(Value v) {
   if (auto cst = v.getDefiningOp<arith::ConstantOp>())
-    return isConstRangeAttribute(cst.getValue(), 0);
+    return isConstRangeAttribute(cst.getValue());
   if (auto cst = v.getDefiningOp<tosa::ConstOp>())
-    return isConstRangeAttribute(cst->getAttr("value"), 0);
+    return isConstRangeAttribute(cst->getAttr("value"));
   return false;
 }
 

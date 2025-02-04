@@ -39,25 +39,19 @@ Value createConstantIntOp(OpBuilder &b, Location loc, Type type,
   return retValue;
 }
 
-std::pair<APInt, bool> createAPInt(Type elemType, int32_t value) {
+FailureOr<APInt> createAPInt(Type elemType, int64_t value) {
   auto bitWidth = elemType.getIntOrFloatBitWidth();
+  bool isSigned = elemType.isSignedInteger();
 
-  APInt apValue(32, value, true);
-  bool overflow = false;
-  if (bitWidth != 32) {
-    if (bitWidth < 32) {
-      apValue = apValue.trunc(bitWidth);
+  if (!isSigned && value < 0)
+    return failure();
 
-      // check if value fits in target type
-      APInt extended = apValue.sext(32);
-      overflow = extended != APInt(32, value, true);
-    } else {
-      // Sign extend to larger width
-      apValue = apValue.sext(bitWidth);
-    }
-  }
+  APInt newValue(bitWidth, value, isSigned);
+  APInt extended = isSigned ? newValue.sext(64) : newValue.zext(64);
+  if (extended != APInt(64, value, true))
+    return failure();
 
-  return std::make_pair(apValue, overflow);
+  return newValue;
 }
 
 std::pair<APFloat, llvm::detail::opStatus> createAPFloat(Type elemType,
