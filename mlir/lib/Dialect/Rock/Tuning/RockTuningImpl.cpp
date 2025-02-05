@@ -164,7 +164,8 @@ computeOptimalSplitKFactors(GemmSize origGemmSize, int32_t gemmMPerBlock,
 static SmallVector<int64_t>
 computeOptimalSplitKFactors(RockGemmWrapperInterface gemmOp,
                             int32_t gemmMPerBlock, int32_t gemmNPerBlock,
-                            int32_t gemmKPerBlock, int32_t kPack) {
+                            int32_t gemmKPerBlock, int32_t kPack,
+                            bool isSplitKFusible) {
   auto info = PopulateParamsInfo::fromOp(gemmOp);
   SmallVector<int64_t> splitKValues = {1};
   GemmFeatures currentFeatures = gemmOp.getGemmFeatures();
@@ -173,9 +174,8 @@ computeOptimalSplitKFactors(RockGemmWrapperInterface gemmOp,
   if (bitEnumContainsAll(currentFeatures, GemmFeatures::wmma)) {
     return splitKValues;
   }
-  const bool isAllowedTypeC =
-      gemmOp.getCType().isF32() || gemmOp.getCType().isF16();
-  if (!isAllowedTypeC) {
+
+  if (!isSplitKFusible) {
     return splitKValues;
   }
 
@@ -200,7 +200,7 @@ computeOptimalSplitKFactors(RockGemmWrapperInterface gemmOp,
 // If `kind` is Full, also filters out unlikely-to-be-good configurations.
 void createGemmTuningRangeBF(TuningParamSet *newSpace,
                              RockGemmWrapperInterface gemmOp,
-                             TuningParamSetKind kind) {
+                             bool isSplitKFusible, TuningParamSetKind kind) {
   auto info = PopulateParamsInfo::fromOp(gemmOp);
 
   // blockSize M/block N/block K/block M/thread N/thread
@@ -257,7 +257,7 @@ void createGemmTuningRangeBF(TuningParamSet *newSpace,
               for (uint32_t gemmKPack : xdlopsParams[5]) {
                 auto optimalSplitKFactors = computeOptimalSplitKFactors(
                     gemmOp, gemmMPerBlock, gemmNPerBlock, gemmKPerBlock,
-                    gemmKPack);
+                    gemmKPack, isSplitKFusible);
                 for (int64_t splitKFactor : optimalSplitKFactors) {
                   for (uint32_t forceUnroll : xdlopsParams[6]) {
                     InitParamsAccel gemmParams(gemmMPerBlock, gemmNPerBlock,
@@ -296,7 +296,7 @@ void createGemmTuningRangeBF(TuningParamSet *newSpace,
               for (uint32_t gemmKPack : wmmaParams[5]) {
                 auto optimalSplitKFactors = computeOptimalSplitKFactors(
                     gemmOp, gemmMPerBlock, gemmNPerBlock, gemmKPerBlock,
-                    gemmKPack);
+                    gemmKPack, isSplitKFusible);
                 for (auto splitKFactor : optimalSplitKFactors) {
                   for (uint32_t forceUnroll : wmmaParams[6]) {
                     InitParamsAccel gemmParams(gemmMPerBlock, gemmNPerBlock,
@@ -328,7 +328,8 @@ void createGemmTuningRangeBF(TuningParamSet *newSpace,
           for (uint32_t gemmKPerBlock : validRangeGeneralGemmParams[3]) {
             for (uint32_t gemmMPerThread : validRangeGeneralGemmParams[4]) {
               auto optimalSplitKFactors = computeOptimalSplitKFactors(
-                  gemmOp, gemmMPerBlock, gemmNPerBlock, gemmKPerBlock, 1);
+                  gemmOp, gemmMPerBlock, gemmNPerBlock, gemmKPerBlock, 1,
+                  isSplitKFusible);
               for (auto splitKFactor : optimalSplitKFactors) {
                 for (uint32_t gemmNPerThread : validRangeGeneralGemmParams[5]) {
                   InitParamsNonAccel gemmParams(
@@ -462,13 +463,15 @@ TuningParamSet *createTunableParamSpace(ModuleOp mod, TuningParamSetKind kind) {
   struct TuningParamSet *newSpace;
   newSpace = new TuningParamSet();
 
+  bool isSplitKFusible = succeeded(rock::testFusionLegalitySplitK(mod));
+
   // create range and heuristic
   WalkResult findPrimary =
       mod->walk([&](rock::RockGemmWrapperInterface op) -> WalkResult {
         switch (kind) {
         case TuningParamSetKind::Full:
         case TuningParamSetKind::Exhaustive:
-          createGemmTuningRangeBF(newSpace, op, kind);
+          createGemmTuningRangeBF(newSpace, op, isSplitKFusible, kind);
           break;
         case TuningParamSetKind::Quick:
           createQuickTuningRange(newSpace, op);
@@ -579,6 +582,8 @@ LogicalResult getTuningProblemStr(rock::AttentionOp attnOp,
     problemOS << "f32" << sep;
   } else if (elemTypeQ.isF16()) {
     problemOS << "f16" << sep;
+  } else if (elemTypeQ.isBF16()) {
+    problemOS << "bf16" << sep;
   } else if (elemTypeQ.isInteger(8)) {
     problemOS << "i8" << sep;
   } else {
@@ -1008,10 +1013,10 @@ RocmlirSplitKSelectionLikelihood isSplitKFaster(int64_t gDim, int64_t mDim,
 }
 
 bool isModuleFusible(ModuleOp module, StringRef perfConfig) {
-  if (!rock::isSplitKRequested(module, perfConfig)) {
-    return true;
-  }
-  return succeeded(rock::testFusionLegality(module));
+  bool fusible = succeeded(rock::testFusionLegalityReduce(module));
+  if (!rock::isSplitKRequested(module, perfConfig))
+    return fusible;
+  return fusible && succeeded(rock::testFusionLegalitySplitK(module));
 }
 
 } // namespace rock

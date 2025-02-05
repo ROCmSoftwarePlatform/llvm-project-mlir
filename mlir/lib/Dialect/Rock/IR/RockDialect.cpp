@@ -552,6 +552,21 @@ static LogicalResult verifyGemmTypes(Operation *op, GemmFeatures features,
     if (elemTypeA != elemTypeB)
       return op->emitOpError("Wmma gridwise does not support mixed types");
   }
+  if (bitEnumContainsAll(features, GemmFeatures::mfma)) {
+    bool isGfx95 = arch.contains("gfx95");
+    if (isGfx95 &&
+        (elemTypeA.isFloat8E4M3FNUZ() || elemTypeA.isFloat8E5M2FNUZ() ||
+         elemTypeB.isFloat8E4M3FNUZ() || elemTypeB.isFloat8E5M2FNUZ())) {
+      return op->emitOpError(
+          "Mfma gridwise does not support E4M3FNUZ/E5M2FNUZ data types");
+    }
+    if (!isGfx95 && arch.contains("gfx9") &&
+        (elemTypeA.isFloat8E4M3FN() || elemTypeA.isFloat8E5M2() ||
+         elemTypeB.isFloat8E4M3FN() || elemTypeB.isFloat8E5M2())) {
+      return op->emitOpError(
+          "Mfma gridwise does not support E4M3/E5M2 data types ");
+    }
+  }
   if (isa<FloatType>(elemTypeA) && !isa<FloatType>(elemTypeC)) {
     return op->emitOpError("floating-point input type ")
            << elemTypeA
@@ -1947,6 +1962,15 @@ LogicalResult ReduceOp::verify() {
       }
     }
   }
+
+  auto inElemType = getIn().getType().getElementType();
+  auto outElemType = getOut().getType().getElementType();
+  if (inElemType != outElemType)
+    return emitError("element type of input and output is different");
+
+  if (getReduceMethod() == ReduceMethod::Max && !outElemType.isF32())
+    return emitError("reduce max only supports f32");
+
   return success();
 }
 
