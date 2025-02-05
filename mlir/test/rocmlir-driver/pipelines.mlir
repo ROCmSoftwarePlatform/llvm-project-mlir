@@ -99,7 +99,7 @@
 // BINARY_MI350-NEXT:cse,
 // BINARY_MI350-NEXT:rock-prepare-llvm)),
 // BINARY_MI350-NEXT:rocdl-attach-target{O=3 abi=500 chip=gfx950 correct-sqrt=true daz=false fast=false features= finite-only=false  module= triple=amdgcn-amd-amdhsa unsafe-math=false wave64=true},
-// BINARY_MI350-NEXT:gpu-module-to-binary{format=fatbin  opts= toolkit=},
+// BINARY_MI350-NEXT:gpu-module-to-binary{format=fatbin  opts= section= toolkit=},
 // BINARY_MI350-NEXT:rock-check-residency,
 // BINARY_MI350-NEXT:emulate-fp8-ext-trunc{f8-conversion-instrs=false ocpf8-conversion-instrs=false})
 
