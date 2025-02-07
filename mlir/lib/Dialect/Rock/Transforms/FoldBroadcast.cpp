@@ -17,6 +17,8 @@
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Rock/IR/Rock.h"
 #include "mlir/Dialect/Rock/IR/RockGemmWrapperInterface.h"
 #include "mlir/Dialect/Rock/IR/TransformMapBuilder.h"
@@ -27,11 +29,13 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Utils/ReshapeOpsUtils.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/Support/Debug.h"
+#include <cstdint>
 
 namespace mlir {
 namespace rock {
@@ -218,6 +222,169 @@ struct FoldBroadcast : public OpRewritePattern<rock::GemmOp> {
   }
 };
 
+static Value insertSliceOfLastDim(PatternRewriter &rewriter, Location loc,
+                                  Value source, Value dest, Value sliceIdx) {
+  TensorType srcType = cast<TensorType>(source.getType());
+  ArrayRef<int64_t> srcShape = srcType.getShape();
+  int64_t mbMemRefTypeRank = srcType.getRank();
+  IntegerAttr zero = rewriter.getIndexAttr(0);
+  IntegerAttr one = rewriter.getIndexAttr(1);
+  SmallVector<OpFoldResult> offsets(mbMemRefTypeRank, zero);
+  SmallVector<OpFoldResult> sizes(mbMemRefTypeRank, one);
+  SmallVector<OpFoldResult> strides(mbMemRefTypeRank, one);
+  // Offset is [0 ... 0, bufferIndex].
+  offsets.back() = sliceIdx;
+  for (int64_t i = 0, e = srcShape.size(); i != e; ++i)
+    sizes[i] = rewriter.getIndexAttr(srcShape[i]);
+  Value subview = rewriter.create<tensor::InsertSliceOp>(
+      loc, source, dest, offsets, sizes, strides);
+  return subview;
+}
+
+static Value createSliceOfLastDim(PatternRewriter &rewriter, Location loc,
+                                  Value buffer, Value sliceIdx) {
+  TensorType bufType = cast<TensorType>(buffer.getType());
+  ArrayRef<int64_t> originalShape = bufType.getShape().drop_back(1);
+  int64_t mbMemRefTypeRank = bufType.getRank();
+  IntegerAttr zero = rewriter.getIndexAttr(0);
+  IntegerAttr one = rewriter.getIndexAttr(1);
+  SmallVector<OpFoldResult> offsets(mbMemRefTypeRank, zero);
+  SmallVector<OpFoldResult> sizes(mbMemRefTypeRank, one);
+  SmallVector<OpFoldResult> strides(mbMemRefTypeRank, one);
+  // Offset is [0 ... 0, bufferIndex].
+  offsets.back() = sliceIdx;
+  // Sizes is [original_size_0 ... original_size_n, 1].
+  for (int64_t i = 0, e = originalShape.size(); i != e; ++i)
+    sizes[i] = rewriter.getIndexAttr(originalShape[i]);
+  // auto dstMemref =
+  //     cast<MemRefType>(memref::SubViewOp::inferRankReducedResultType(
+  //         originalShape, bufType, offsets, sizes, strides));
+  Value subview = rewriter.create<tensor::ExtractSliceOp>(loc, buffer, offsets,
+                                                          sizes, strides);
+  // subview.dump();
+  // SmallVector<ReassociationIndices> reassocIndices = {{0}, {1, 2}};
+  // Value collapsed =
+  //     rewriter.create<tensor::CollapseShapeOp>(loc, subview, reassocIndices);
+  return subview;
+}
+
+struct LoopGemmBroadcast : public OpRewritePattern<rock::GemmOp> {
+  using OpRewritePattern<rock::GemmOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(rock::GemmOp op,
+                                PatternRewriter &rw) const override {
+
+    if (!op->hasOneUse()) {
+      llvm::errs() << "returning failure 0\n";
+      return failure();
+    }
+    rock::TransformOp transform;
+    linalg::GenericOp laGenericOp;
+    SmallVector<Operation *> users(op->getUsers());
+    while (!laGenericOp and !users.empty()) {
+      Operation *currUser = users.pop_back_val();
+      for (Operation *userUser : currUser->getUsers()) {
+        if (dyn_cast<linalg::GenericOp>(userUser) &&
+            dyn_cast<rock::TransformOp>(currUser)) {
+          laGenericOp = dyn_cast<linalg::GenericOp>(userUser);
+          transform = dyn_cast<rock::TransformOp>(currUser);
+        } else {
+          users.push_back(userUser);
+        }
+      }
+    }
+    Operation *transOp = transform;
+    SmallVector<Operation *> transformChain;
+    while (!dyn_cast<rock::GemmOp>(transOp)) {
+      transformChain.push_back(transOp);
+      transOp = dyn_cast<rock::TransformOp>(transOp).getInput().getDefiningOp();
+    }
+    transformChain.push_back(op);
+    if (!transform or !laGenericOp) {
+      llvm::errs() << "didn't find inputs\n";
+      return failure();
+    }
+    rock::TransformMapAttr transMap = transform.getTransformAttr();
+    // TODO(umang) add checks that it is broadcasting dimension of bound 1
+    if (llvm::any_of(transMap.getOps(), [](rock::TransformAttr transformType) {
+          return transformType.getType() != rock::TransformType::PassThrough and
+                 transformType.getType() != rock::TransformType::Broadcast;
+        })) {
+      llvm::errs() << "returning failure: 1 \n";
+      return failure();
+    }
+    auto outType = cast<ShapedType>(laGenericOp->getResult(0).getType());
+    auto inpType = cast<ShapedType>(op->getResult(0).getType());
+    int64_t broadcastingFactor = 1;
+    if (outType.getShape() != inpType.getShape()) {
+      broadcastingFactor = outType.getNumElements() / inpType.getNumElements();
+    }
+    auto loc = laGenericOp.getLoc();
+    llvm::errs() << "before\n";
+    op->getParentOp()->dump();
+    auto zeroConstantOp = rw.create<arith::ConstantIndexOp>(loc, 0);
+    Value nIterations =
+        rw.create<mlir::arith::ConstantIndexOp>(loc, broadcastingFactor);
+    Value step = rw.create<mlir::arith::ConstantIndexOp>(loc, 1);
+    auto input1 = laGenericOp.getInputs().back();
+    if (input1.getDefiningOp<tensor::ExtractSliceOp>()) {
+      llvm::errs() << "returning failure: 2 \n";
+      return failure();
+    }
+    tensor::EmptyOp outTensor = dyn_cast<tensor::EmptyOp>(
+        (*laGenericOp.getOutputs().begin()).getDefiningOp());
+
+    Value outputTensor = rw.create<tensor::EmptyOp>(
+        loc, outTensor.getMixedSizes(), outTensor.getType().getElementType());
+    auto loopOp = rw.create<scf::ForOp>(loc, zeroConstantOp, nIterations, step,
+                                        ValueRange{outputTensor});
+    {
+      PatternRewriter::InsertionGuard guard(rw);
+      rw.setInsertionPointToStart(loopOp.getBody());
+      Value iv = loopOp.getInductionVar();
+      linalg::GenericOp newGenOp;
+      auto dims = cast<ShapedType>(input1.getType()).getShape();
+      SmallVector<int64_t> outDims(dims);
+      outDims[dims.size() - 1] = 1;
+      Value slicedInput = createSliceOfLastDim(rw, loc, input1, iv);
+      Value slicedOutput =
+          createSliceOfLastDim(rw, loc, *loopOp.getInitArgs().begin(), iv);
+      for (Operation *op : transformChain) {
+        rw.moveOpAfter(op, slicedOutput.getDefiningOp());
+      }
+      Value origInput0 = transform.getInput();
+      // Value input0 = origInput0;
+      //  while (!input0.getDefiningOp<rock::GemmOp>()) {
+      //    rw.moveOpAfter(input0.getDefiningOp(), slicedInput.getDefiningOp());
+      //    input0 = input0.getDefiningOp<rock::TransformOp>().getInput();
+      //  }
+      //  rw.moveOpAfter(input0.getDefiningOp(), slicedInput.getDefiningOp());
+
+      auto laIndexingMaps = laGenericOp.getIndexingMapsArray();
+      SmallVector<AffineMap, 4> newAffineMaps;
+      for (auto map : laIndexingMaps) {
+        newAffineMaps.push_back(map);
+      }
+      linalg::GenericOp newlaGenericOp = rw.create<linalg::GenericOp>(
+          loc, slicedOutput.getType(), ValueRange{origInput0, slicedInput},
+          ValueRange{slicedOutput}, newAffineMaps,
+          laGenericOp.getIteratorTypesArray());
+      newlaGenericOp.getRegion().takeBody(laGenericOp->getRegion(0));
+      Value insertedSlice =
+          insertSliceOfLastDim(rw, loc, newlaGenericOp->getResults().front(),
+                               loopOp.getInitArgs().front(), iv);
+      rw.create<scf::YieldOp>(loc, insertedSlice);
+    }
+    llvm::errs() << "after\n";
+    op->getParentOp()->dump();
+    llvm::errs() << "erasing now\n";
+    rw.replaceOp(laGenericOp, loopOp);
+    llvm::errs() << "after erasing\n";
+    op->getParentOp()->dump();
+    return success();
+  }
+};
+
 struct FoldTransformBroadcast : public OpRewritePattern<rock::TransformOp> {
   using OpRewritePattern<rock::TransformOp>::OpRewritePattern;
 
@@ -286,8 +453,18 @@ void RockFoldBroadcastPass::runOnOperation() {
   }
 
   {
+    // ConversionTarget target(*ctx);
+    // target.addLegalDialect<arith::ArithDialect, rock::RockDialect,
+    //                        memref::MemRefDialect, linalg::LinalgDialect,
+    //                        scf::SCFDialect>();
+    // target.addLegalOp<rock::GemmOp>();
+    // RewritePatternSet patterns(ctx);
+    // patterns.add<FoldBroadcast, LoopGemmBroadcast>(ctx);
+    // if (failed(applyPartialConversion(getOperation(), target,
+    //                                   std::move(patterns))))
+    //   signalPassFailure();
     RewritePatternSet patterns(ctx);
-    patterns.add<FoldBroadcast>(ctx);
+    patterns.add<LoopGemmBroadcast>(ctx);
     if (failed(applyPatternsGreedily(func, std::move(patterns))))
       signalPassFailure();
   }
