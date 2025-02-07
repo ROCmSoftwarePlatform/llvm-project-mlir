@@ -40,8 +40,6 @@ def generate_option_list(table, key1, key2):
 def generate_op_variants_test(indir, outdir, type, file, opspec):
     archNames = getArch()
     arch = ','.join(archNames)
-    if "bf16" in type and "gfx11" in arch:
-        return
     opname,op = opspec
     with open(f"{indir}/{file}.e2e.template") as f:
         template = f.read()
@@ -69,8 +67,6 @@ def generate_type_only_test(indir, outdir, type, file):
         gen_type = 'i32'
     else:
         raise Exception("Unsupported type '{type}'")
-    if "bf16" in type and "gfx11" in arch:
-        return
     with open(f"{indir}/{file}.e2e.template") as f:
         template = f.read()
     outfile = f"{outdir}/{file}-{type}.e2e.mlir"
