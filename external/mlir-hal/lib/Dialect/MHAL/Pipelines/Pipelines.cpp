@@ -73,10 +73,10 @@ void mhal::buildGraphPipeline(OpPassManager &pm,
 
   SmallVector<std::string, 4> anchors{"tosa.conv2d", "tosa.depthwise_conv2d",
                                       "tosa.matmul"};
-  tosa::TosaPartitionOptions opts;
+  mhal::TosaPartitionOptions opts;
   opts.anchorOps = std::move(anchors);
   opts.trailingOnly = true;
-  pm.addPass(tosa::createTosaPartition(opts));
+  pm.addPass(mhal::createTosaPartition(opts));
   pm.addPass(mhal::createMHALAnnotateAccessKindsPass());
 
   /* mlir-opt --duplicate-function-elimination

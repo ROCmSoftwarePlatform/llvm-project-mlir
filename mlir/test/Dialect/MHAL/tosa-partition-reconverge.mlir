@@ -1,4 +1,4 @@
-// RUN: mlir-opt --tosa-partition='trailing-only=false' %s | FileCheck %s
+// RUN: rocmlir-opt --tosa-partition='trailing-only=false' %s | FileCheck %s
 
 // CHECK: forward__part_0
 // CHECK: func.func @forward
