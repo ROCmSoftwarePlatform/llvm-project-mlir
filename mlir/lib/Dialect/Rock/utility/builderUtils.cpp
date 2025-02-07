@@ -42,29 +42,12 @@ Value createConstantIntOp(OpBuilder &b, Location loc, Type type,
 Value createConstantFloatOp(OpBuilder &b, Location loc, Type type,
                             Type elemType, float value,
                             APFloat::opStatus expectedStatus) {
-  auto semantics = static_cast<APFloat::Semantics>(-1);
-  if (elemType.isF32()) {
-    semantics = APFloat::S_IEEEsingle;
-  } else if (elemType.isF16()) {
-    semantics = APFloat::S_IEEEhalf;
-  } else if (elemType.isBF16()) {
-    semantics = APFloat::S_BFloat;
-  } else if (elemType.isFloat8E4M3FNUZ()) {
-    semantics = APFloat::S_Float8E4M3FNUZ;
-  } else if (elemType.isFloat8E5M2FNUZ()) {
-    semantics = APFloat::S_Float8E5M2FNUZ;
-  } else if (elemType.isFloat8E4M3FN()) {
-    semantics = APFloat::S_Float8E4M3FN;
-  } else if (elemType.isFloat8E5M2()) {
-    semantics = APFloat::S_Float8E5M2;
-  } else {
-    llvm_unreachable("Unexpected float semantics");
-  }
-
+  const llvm::fltSemantics &semantics =
+      cast<FloatType>(elemType).getFloatSemantics();
   APFloat apValue(value);
   bool lostInfo = false;
-  auto status = apValue.convert(APFloat::EnumToSemantics(semantics),
-                                APFloat::rmNearestTiesToEven, &lostInfo);
+  auto status =
+      apValue.convert(semantics, APFloat::rmNearestTiesToEven, &lostInfo);
 
   assert(status == expectedStatus);
   Value retValue;
