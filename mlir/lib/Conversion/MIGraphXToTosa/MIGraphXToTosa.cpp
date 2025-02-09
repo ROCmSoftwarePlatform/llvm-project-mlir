@@ -128,7 +128,7 @@ static Value createCastOp(PatternRewriter &rewriter, Location loc,
                                       "", input)
               .getResult(0);
   } else {
-    res = rewriter.create<tosa::CastOp>(loc, resType, input).getResult();
+    res = rewriter.createOrFold<tosa::CastOp>(loc, resType, input);
   }
   return res;
 }
@@ -1157,6 +1157,15 @@ struct WhereConverter final : public OpConversionPattern<migraphx::WhereOp> {
   matchAndRewrite(migraphx::WhereOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final;
 };
+
+struct GreaterOrEqualConverter final
+    : public OpConversionPattern<migraphx::GreaterOrEqual> {
+  using OpConversionPattern<migraphx::GreaterOrEqual>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(migraphx::GreaterOrEqual op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final;
+};
 } // namespace
 
 LogicalResult
@@ -1188,9 +1197,27 @@ LiteralConverter::matchAndRewrite(migraphx::LiteralOp op, OpAdaptor adaptor,
       // value bytes
       value = SplatElementsAttr::get(newType, newSplatValue);
     } else {
-      // Reinterpret existing values under the new type
-      auto originalAttr = cast<mlir::DenseElementsAttr>(value);
-      value = DenseElementsAttr::get(newType, originalAttr.getRawData());
+      // For non-splat attributes, we need to convert each element to the new
+      // type
+      SmallVector<Attribute> convertedElements;
+      convertedElements.reserve(value.getNumElements());
+
+      for (auto it : value.getValues<Attribute>()) {
+        Attribute convertedElement;
+        if (auto intAttr = dyn_cast<IntegerAttr>(it))
+          convertedElement =
+              IntegerAttr::get(newType.getElementType(), intAttr.getValue());
+        else if (auto floatAttr = dyn_cast<FloatAttr>(it))
+          convertedElement =
+              FloatAttr::get(newType.getElementType(), floatAttr.getValue());
+        else
+          return failure();
+
+        convertedElements.push_back(convertedElement);
+      }
+
+      // Create a new DenseElementsAttr with the converted elements and new type
+      value = DenseElementsAttr::get(newType, convertedElements);
     }
   }
 
@@ -1226,6 +1253,23 @@ WhereConverter::matchAndRewrite(migraphx::WhereOp op, OpAdaptor adaptor,
   rewriter.replaceOpWithNewOp<tosa::SelectOp>(
       op, getTypeConverter()->convertType(op.getResult().getType()), cond, inA,
       inB);
+  return success();
+}
+
+LogicalResult GreaterOrEqualConverter::matchAndRewrite(
+    migraphx::GreaterOrEqual op, OpAdaptor adaptor,
+    ConversionPatternRewriter &rewriter) const {
+  Value inA = adaptor.getInA();
+  Value inB = adaptor.getInB();
+
+  // Create a new tensor type with I1 element type
+  auto newType =
+      RankedTensorType::get(op.getType().getShape(), rewriter.getI1Type());
+  auto goe = rewriter.createOrFold<tosa::GreaterEqualOp>(op->getLoc(), newType,
+                                                         inA, inB);
+  rewriter.replaceOpWithNewOp<tosa::CastOp>(op, adaptor.getInA().getType(),
+                                            goe);
+
   return success();
 }
 
@@ -1409,7 +1453,8 @@ void migraphx::populateMIGraphXToTosaConversionPatterns(
                TrivialConverter<TanhOp, tosa::TanhOp>, QuantizeLinearConverter,
                DeQuantizeLinearConverter, ConvertConverter, NegConverter,
                ReluConverter, SoftmaxConverter, LiteralConverter, ClipConverter,
-               WhereConverter>(typeConverter, patterns.getContext());
+               WhereConverter, GreaterOrEqualConverter>(typeConverter,
+                                                        patterns.getContext());
 }
 
 void mlir::migraphx::populateMIGraphXFuncBoundaryToTosaConversionPatterns(
