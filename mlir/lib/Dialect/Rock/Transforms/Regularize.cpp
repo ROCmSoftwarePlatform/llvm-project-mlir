@@ -25,10 +25,13 @@
 #include "mlir/Dialect/Rock/utility/transformMapUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/ReshapeOpsUtils.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
@@ -91,6 +94,44 @@ struct ExpandRewritePattern : public OpRewritePattern<memref::ExpandShapeOp> {
           loc, "could not translate memref expansion into rock transform");
     rw.replaceOpWithNewOp<rock::TransformOp>(expandOp, expandOp.getSrc(),
                                              transform);
+    return success();
+  }
+};
+
+struct MemCpyRewrite : public OpRewritePattern<memref::CopyOp> {
+  using OpRewritePattern<memref::CopyOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(memref::CopyOp copyOp,
+                                PatternRewriter &rw) const final {
+    auto src = copyOp.getSource();
+    auto dest = copyOp.getTarget();
+    auto *parentOp = copyOp->getParentOp();
+    if (!dyn_cast<func::FuncOp>(parentOp)) {
+      llvm::errs() << "no funcop\n";
+      return failure();
+    }
+    func::FuncOp funcOp = dyn_cast<func::FuncOp>(parentOp);
+    auto args = funcOp.getArguments();
+    if (not llvm::is_contained(args, dest)) {
+      llvm::errs() << "not args as dest\n";
+      return failure();
+    }
+    rock::TransformOp transformOp = src.getDefiningOp<rock::TransformOp>();
+    scf::ForOp loopOp = transformOp.getInput().getDefiningOp<scf::ForOp>();
+    if (!loopOp || !transformOp) {
+      llvm::errs() << "ddin't find loop op or transformop\n";
+      return failure();
+    }
+    auto invertedMap =
+        invertTransformMap(rw, transformOp.getTransformAttr(),
+                           loopOp->getOperand(1).getDefiningOp()->getLoc());
+    auto destTransformed = rw.create<rock::TransformOp>(
+        loopOp->getOperand(1).getDefiningOp()->getLoc(), dest, invertedMap);
+    loopOp.setOperand(3, destTransformed);
+    destTransformed->moveBefore(loopOp);
+    rw.eraseOp(copyOp);
+    rw.eraseOp(transformOp);
+    llvm::errs() << "Success applying memcpy rewriter\n";
     return success();
   }
 };
@@ -681,11 +722,18 @@ void RockRegularizePass::runOnOperation() {
     // disable for non-kernels
     return;
   }
+  {
 
+    RewritePatternSet patterns(ctx);
+    patterns.add<MemCpyRewrite>(ctx);
+    if (failed(applyPatternsGreedily(func, std::move(patterns))))
+      signalPassFailure();
+  }
   {
     ConversionTarget target(*ctx);
     target.addLegalDialect<arith::ArithDialect, rock::RockDialect,
-                           memref::MemRefDialect, linalg::LinalgDialect>();
+                           memref::MemRefDialect, linalg::LinalgDialect,
+                           scf::SCFDialect>();
     target.addIllegalOp<memref::ExpandShapeOp, memref::CollapseShapeOp>();
     target.addDynamicallyLegalOp<linalg::GenericOp>(
         [](linalg::GenericOp op) { return isRegularGeneric(op); });

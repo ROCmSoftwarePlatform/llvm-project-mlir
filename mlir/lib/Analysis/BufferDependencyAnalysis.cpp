@@ -9,6 +9,7 @@
 
 #include "mlir/Analysis/BufferDependencyAnalysis.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Interfaces/LoopLikeInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -26,6 +27,13 @@ void findAllUsers(OpOperand *thisUser,
   if (auto viewOp = dyn_cast<ViewLikeOpInterface>(thisUser->getOwner())) {
     for (OpOperand &user : viewOp->getUses()) {
       findAllUsers(&user, users);
+    }
+  } else if (auto loopOp =
+                 dyn_cast<LoopLikeOpInterface>(thisUser->getOwner())) {
+    for (Value initArg : loopOp.getRegionIterArgs()) {
+      for (OpOperand &user : initArg.getUses()) {
+        findAllUsers(&user, users);
+      }
     }
   } else {
     users.push_back(thisUser);

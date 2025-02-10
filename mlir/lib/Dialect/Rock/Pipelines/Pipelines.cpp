@@ -95,7 +95,6 @@ void rock::buildBufferizePipeline(OpPassManager &pm,
   funcPm2.addPass(createLinalgFoldUnitExtentDimsPass());
   funcPm2.addPass(rock::createRockViewToTransformPass());
   funcPm2.addPass(rock::createRockFoldBroadcastPass());
-  funcPm2.addPass(rock::createRockViewToTransformPass());
 
   // bufferization
   /* rocmlir-opt --canonicalize -convert-tensor-to-linalg --cse

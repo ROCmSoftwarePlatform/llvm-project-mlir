@@ -275,7 +275,7 @@ GemmRewritePattern::arrangeSplitKTransform(OpBuilder &builder, GemmOp op,
 
   // set the prefill attribute
   Value matC = op.getC();
-  auto func = llvm::cast<func::FuncOp>(op->getParentOp());
+  func::FuncOp func = op->getParentOfType<func::FuncOp>();
   FailureOr<SmallVector<BlockArgument>> args =
       traceGemmOutputToArgs(matC, func, bufferDeps);
   if (failed(args)) {
@@ -431,7 +431,7 @@ LogicalResult GemmRewritePattern::computeGridSize(ConversionPatternRewriter &rw,
 
   op.setGridSizeAttr(rw.getI32IntegerAttr(gridSize));
 
-  func::FuncOp funcOp = cast<func::FuncOp>(op->getParentOp());
+  func::FuncOp funcOp = op->getParentOfType<func::FuncOp>();
   funcOp->setAttr("grid_size", rw.getI32IntegerAttr(gridSize));
   return success();
 }
@@ -567,7 +567,8 @@ AttentionRewritePattern::computeGridSize(ConversionPatternRewriter &rw,
       ((gemm0Size.n) / accelParams0.getNPerBlock()) * gemm0Size.g;
 
   IntegerAttr gridSizeAttr = rw.getI32IntegerAttr(gridSize);
-  func::FuncOp funcOp = cast<func::FuncOp>(op->getParentOp());
+  func::FuncOp funcOp = op->getParentOfType<func::FuncOp>();
+
   funcOp->setAttr("grid_size", gridSizeAttr);
   return success();
 }

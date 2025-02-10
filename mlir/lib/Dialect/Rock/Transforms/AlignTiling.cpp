@@ -41,6 +41,7 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
+#include "mlir/Interfaces/LoopLikeInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Rewrite/FrozenRewritePatternSet.h"
@@ -331,6 +332,14 @@ LogicalResult applyAlignPatterns(Operation *op,
   for (Region &region : op->getRegions()) {
     for (Block &block : region.getBlocks()) {
       for (Operation &op : block.getOperations()) {
+        if (dyn_cast<scf::ForOp>(op)) {
+          auto *body = dyn_cast<scf::ForOp>(op).getBody(0);
+          for (Operation &op : body->getOperations()) {
+            if (matchableOps.contains(op.getName())) {
+              rewriter.scheduleVisit(&op);
+            }
+          }
+        }
         if (matchableOps.contains(op.getName())) {
           rewriter.scheduleVisit(&op);
         }

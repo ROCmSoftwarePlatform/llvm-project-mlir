@@ -50,6 +50,7 @@ add_rocmlir_dialect_library(MLIRRockTransforms
   MLIRLinalgUtils
   MLIRLinalgTransforms
   MLIRLLVMDialect
+  MLIRSCFDialect
   MLIRMathToLLVM
   MLIRMemRefTransforms
   MLIRAffineToStandard

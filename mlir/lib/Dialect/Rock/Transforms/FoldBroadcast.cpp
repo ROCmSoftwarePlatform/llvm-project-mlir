@@ -14,6 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ============================================================
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
 
@@ -33,6 +34,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/Support/Debug.h"
 #include <cstdint>
@@ -278,6 +280,8 @@ struct LoopGemmBroadcast : public OpRewritePattern<rock::GemmOp> {
       llvm::errs() << "returning failure 0\n";
       return failure();
     }
+    mlir::func::FuncOp funcOp = dyn_cast<func::FuncOp>(op->getParentOp());
+
     rock::TransformOp transform;
     linalg::GenericOp laGenericOp;
     SmallVector<Operation *> users(op->getUsers());
@@ -300,6 +304,17 @@ struct LoopGemmBroadcast : public OpRewritePattern<rock::GemmOp> {
       transOp = dyn_cast<rock::TransformOp>(transOp).getInput().getDefiningOp();
     }
     transformChain.push_back(op);
+    // for (Value input : op.getOperands()) {
+    //   while (!llvm::is_contained(funcOp.getArguments(), input) and
+    //          input != *op.getResults().begin()) {
+    //     transformChain.push_back(input.getDefiningOp());
+    //     if (input.getDefiningOp<rock::TransformOp>()) {
+    //       input = input.getDefiningOp<rock::TransformOp>().getInput();
+    //     } else {
+    //       break;
+    //     }
+    //   }
+    // }
     if (!transform or !laGenericOp) {
       llvm::errs() << "didn't find inputs\n";
       return failure();
@@ -372,15 +387,15 @@ struct LoopGemmBroadcast : public OpRewritePattern<rock::GemmOp> {
       newlaGenericOp.getRegion().takeBody(laGenericOp->getRegion(0));
       Value insertedSlice =
           insertSliceOfLastDim(rw, loc, newlaGenericOp->getResults().front(),
-                               loopOp.getInitArgs().front(), iv);
+                               loopOp.getRegionIterArgs().front(), iv);
       rw.create<scf::YieldOp>(loc, insertedSlice);
     }
     llvm::errs() << "after\n";
-    op->getParentOp()->dump();
+    op->getParentOp()->getParentOp()->dump();
     llvm::errs() << "erasing now\n";
     rw.replaceOp(laGenericOp, loopOp);
     llvm::errs() << "after erasing\n";
-    op->getParentOp()->dump();
+    op->getParentOp()->getParentOp()->dump();
     return success();
   }
 };
