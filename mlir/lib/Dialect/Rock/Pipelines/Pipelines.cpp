@@ -122,7 +122,7 @@ void rock::buildBufferizePipeline(OpPassManager &pm,
   pm.addPass(createConvertTensorToLinalgPass());
   auto &funcPm3 = pm.nest<func::FuncOp>();
   funcPm3.addPass(bufferization::createEmptyTensorToAllocTensorPass());
-  funcPm3.addPass(createLinalgFoldUnitExtentDimsPass());
+  // funcPm3.addPass(createLinalgFoldUnitExtentDimsPass());
 
   bufferization::OneShotBufferizationOptions bufOpts;
   bufOpts.allowReturnAllocsFromLoops = true;
