@@ -2,11 +2,11 @@
 // ALLOW_RETRIES: 2
 // CHECK: [1 1 1]
 module {
-func.func @dot_add_reduce_sum(%arg0: !migraphx.shaped<16x64x122xf32, 7808x122x1>, %arg1: !migraphx.shaped<16x16xf32, 16x1>, %arg2: !migraphx.shaped<16x64xf32, 64x1>) -> !migraphx.shaped<16x64x122xf32, 7808x122x1> {
+func.func @dot_add_reduce_sum(%arg0: !migraphx.shaped<16x64x2xf32, 128x2x1>, %arg1: !migraphx.shaped<16x16xf32, 16x1>, %arg2: !migraphx.shaped<16x64xf32, 64x1>) -> !migraphx.shaped<16x64x2xf32, 128x2x1> {
     %0 = migraphx.dot %arg1, %arg2 : <16x16xf32, 16x1>, <16x64xf32, 64x1> -> <16x64xf32, 64x1>
-    %1 = migraphx.broadcast %0 {axis = 0, out_lens = [16, 64, 122]} : <16x64xf32, 64x1> -> <16x64x122xf32, 64x1x0>
-    %2 = migraphx.sigmoid %1 : <16x64x122xf32, 64x1x0> -> <16x64x122xf32, 64x1x0>
-    %3 = migraphx.mul %2, %arg0 : <16x64x122xf32, 64x1x0>, <16x64x122xf32, 7808x122x1> -> <16x64x122xf32, 7808x122x1>
-    return %3 : !migraphx.shaped<16x64x122xf32, 7808x122x1>
+    %1 = migraphx.broadcast %0 {axis = 0, out_lens = [16, 64, 2]} : <16x64xf32, 64x1> -> <16x64x2xf32, 64x1x0>
+    %2 = migraphx.sigmoid %1 : <16x64x2xf32, 64x1x0> -> <16x64x2xf32, 64x1x0>
+    %3 = migraphx.mul %2, %arg0 : <16x64x2xf32, 64x1x0>, <16x64x2xf32, 128x2x1> -> <16x64x2xf32, 128x2x1>
+    return %3 : !migraphx.shaped<16x64x2xf32, 128x2x1>
   }
 }
