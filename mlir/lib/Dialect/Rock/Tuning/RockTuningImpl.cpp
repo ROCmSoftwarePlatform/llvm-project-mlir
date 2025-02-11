@@ -1067,8 +1067,9 @@ RocmlirSplitKSelectionLikelihood isSplitKFaster(int64_t gDim, int64_t mDim,
       int32_t gemmMNPerWave = nPerBlock * mPerBlock / 64;
       for (uint32_t kPerBlock : rangeGemmParams[2]) {
         for (uint32_t kPack : rangeGemmParams[3]) {
-          const double currWorkImbalance = computeWorkImbalance(
-              gemmSize, mPerBlock, nPerBlock, gemmMNPerWave, numCUs*numEUPerCU);
+          const double currWorkImbalance =
+              computeWorkImbalance(gemmSize, mPerBlock, nPerBlock,
+                                   gemmMNPerWave, numCUs * numEUPerCU);
           minWorkImbalance = std::min(currWorkImbalance, minWorkImbalance);
 
           llvm::SmallVector<uint32_t> currSplitKValues =
