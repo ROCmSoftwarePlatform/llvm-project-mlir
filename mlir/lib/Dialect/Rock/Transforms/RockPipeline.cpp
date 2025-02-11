@@ -523,10 +523,11 @@ void placeBarriers(IRRewriter &rewriter, Location loc, scf::ForOp forOp,
 
 bool checkIfPipeliningSupported(scf::ForOp forOp) {
   auto rockPipelineAttrName = rock::PipelineAttr::getMnemonic();
-  while (scf::ForOp parentLoop = forOp->getParentOfType<scf::ForOp>()) {
-    if (parentLoop->hasAttr(rockPipelineAttrName)) {
+  while (forOp) {
+    if (forOp->hasAttr(rockPipelineAttrName)) {
       return true;
     }
+    forOp = forOp->getParentOfType<scf::ForOp>();
   }
   return false;
 }
@@ -536,24 +537,24 @@ bool checkIfPipeliningSupported(scf::ForOp forOp) {
 SmallVector<scf::ForOp> collectLoopLevels(mlir::func::FuncOp func) {
   SmallVector<scf::ForOp> loops;
 
-  unsigned curLevelPos = 0;
+  // unsigned curLevelPos = 0;
   unsigned curLevelLen = 0;
   func.walk([&](scf::ForOp forOp) {
     loops.push_back(forOp);
     curLevelLen++;
   });
 
-  while (curLevelLen) {
-    unsigned nextLevelLen = 0;
-    for (unsigned i = 0; i < curLevelLen; i++) {
-      loops[curLevelPos + i].getBody()->walk([&](scf::ForOp forOp) {
-        loops.push_back(forOp);
-        nextLevelLen++;
-      });
-    }
-    curLevelPos += curLevelLen;
-    curLevelLen = nextLevelLen;
-  }
+  // while (curLevelLen) {
+  //   unsigned nextLevelLen = 0;
+  //   for (unsigned i = 0; i < curLevelLen; i++) {
+  //     loops[curLevelPos + i].getBody()->walk([&](scf::ForOp forOp) {
+  //       loops.push_back(forOp);
+  //       nextLevelLen++;
+  //     });
+  //   }
+  //   curLevelPos += curLevelLen;
+  //   curLevelLen = nextLevelLen;
+  // }
 
   return loops;
 }
@@ -609,10 +610,10 @@ void RockPipeline::runOnOperation() {
   for (auto forOp : llvm::reverse(loops)) {
     if (forOp->hasAttr(rockPipelineAttrName)) {
       if (checkIfPipeliningSupported(forOp)) {
-        emitError(loc, "Nested pipelining is not supported yet!\n");
-        return signalPassFailure();
+        loopsToPipeline.push_back(forOp);
+        llvm::errs() << "Loop is here:\n";
+        forOp->dump();
       }
-      loopsToPipeline.push_back(forOp);
     }
   }
 
