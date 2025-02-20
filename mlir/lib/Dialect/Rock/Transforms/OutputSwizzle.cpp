@@ -205,7 +205,7 @@ struct ThreadwiseWriteAllRewritePattern
     if (auto elemVecType = dyn_cast<VectorType>(destElemType)) {
       LLVM_DEBUG(llvm::dbgs() << "ThreadwiseWriteAllOp saves a vector type"
                               << ", skipping swizzle\n");
-      return success();
+      return failure();
     }
     size_t extraIdxCount = op.getExtraIndices().size();
     VectorizationResult vectorRes =
@@ -218,7 +218,7 @@ struct ThreadwiseWriteAllRewritePattern
                  << "Original vectorization of 'iter' is " << originalVectorLen
                  << ", the output swizzle could achieve "
                  << elementsWrittenPerThread << ", skipping swizzle\n");
-      return success();
+      return failure();
     }
     LLVM_DEBUG(llvm::dbgs()
                << "Original vectorization of 'iter' is " << originalVectorLen
