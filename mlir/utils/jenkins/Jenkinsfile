@@ -337,6 +337,7 @@ void archivePerfDB() {
         if (params.canXdlops) {
             unstash name: "MLIR-PerfDB-gfx908"
             unstash name: "MLIR-PerfDB-gfx90a"
+            unstash name: "MLIR-PerfDB-gfx942"
             if (!params.disableNavi21)
                 unstash name: "MLIR-PerfDB-gfx1030"
         } else {
@@ -521,11 +522,11 @@ pipeline {
                         }
                         steps {
                             script {
-                                    build_fixedE2ETests("${CODEPATH}")
-                                    preMergeCheck("${CODEPATH}")
-                                    timeout(time: 60, activity: true, unit: 'MINUTES') {
-                                        sh 'cd build; ninja check-mlir check-rocmlir'
-                                    }
+                                build_fixedE2ETests("${CODEPATH}")
+                                preMergeCheck("${CODEPATH}")
+                                timeout(time: 60, activity: true, unit: 'MINUTES') {
+                                    sh 'cd build; ninja check-mlir check-rocmlir'
+                                }
                             }
                         }
                     }
@@ -539,7 +540,7 @@ pipeline {
                         }
                         steps {
                             script {
-                                    check_randomE2ETests("${CODEPATH}")
+                                check_randomE2ETests("${CODEPATH}")
                             }
                         }
                     }
@@ -685,7 +686,7 @@ pipeline {
                 axes {
                     axis {
                         name 'ARCH'
-                        values 'gfx908', 'gfx90a', 'gfx1030'
+                        values 'gfx908', 'gfx90a', 'gfx942'
                     }
                 }
                 agent {
@@ -812,7 +813,7 @@ pipeline {
                 axes {
                     axis {
                         name 'CHIP'
-                        values 'gfx908', 'gfx90a', 'gfx1030', 'gfx1101'
+                        values 'gfx908', 'gfx90a', 'gfx942', 'gfx1030', 'gfx1101'
                     }
                 }
                 when {
