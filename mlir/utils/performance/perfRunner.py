@@ -314,6 +314,7 @@ class ConvConfiguration(PerfConfiguration):
     def computeTFlops(self, ns):
         # NaN will propagate as expected
         # Repeats are handled by the fact that we're using avarageNs
+        assert(self.k % self.group == 0)
         assert(self.c % self.group == 0)
         return (2.0 * self.n * (self.c//self.group) * self.k * self.ho * self.wo * self.y * self.x) / (float(ns) * 1e-9) / 1e12
 
