@@ -18,8 +18,8 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MHAL/Transforms/Passes.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
-#include "mlir/Dialect/Tosa/Transforms/Passes.h"
 #include "mlir/Dialect/Tosa/Utils/QuantUtils.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
@@ -44,10 +44,10 @@ using llvm::SmallVector;
 // TODO(kdrewnia): Make it so list options can have defaults, and then get rid
 // of needing to set defaults here
 namespace mlir {
-namespace tosa {
+namespace mhal {
 #define GEN_PASS_DEF_TOSAPARTITION
-#include "mlir/Dialect/Tosa/Transforms/Passes.h.inc"
-} // namespace tosa
+#include "mlir/Dialect/MHAL/Transforms/Passes.h.inc"
+} // namespace mhal
 } // namespace mlir
 
 using namespace mlir;
@@ -154,9 +154,9 @@ bool isTrailingOp(Operation *op) {
 }
 
 class TosaPartitionPass
-    : public tosa::impl::TosaPartitionBase<TosaPartitionPass> {
+    : public mhal::impl::TosaPartitionBase<TosaPartitionPass> {
 public:
-  using tosa::impl::TosaPartitionBase<TosaPartitionPass>::TosaPartitionBase;
+  using mhal::impl::TosaPartitionBase<TosaPartitionPass>::TosaPartitionBase;
 
   void runOnOperation() override;
 };

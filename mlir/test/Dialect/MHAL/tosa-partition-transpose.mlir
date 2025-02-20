@@ -1,4 +1,4 @@
-// RUN: mlir-opt --tosa-partition='trailing-only=false' %s | FileCheck %s
+// RUN: rocmlir-opt --tosa-partition='trailing-only=false' %s | FileCheck %s
 // CHECK-LABEL: func private @forward__part_0
 // CHECK-NEXT: tosa.const
 // CHECK-NEXT: tosa.transpose

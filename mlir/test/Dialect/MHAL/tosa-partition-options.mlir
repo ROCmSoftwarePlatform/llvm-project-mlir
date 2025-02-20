@@ -1,14 +1,14 @@
-// RUN: mlir-opt --tosa-partition %s | FileCheck %s
-// RUN: mlir-opt --tosa-partition=partition-tag=one %s | FileCheck %s --check-prefix=ONE
-// RUN: mlir-opt --tosa-partition='anchor-ops=tosa.depthwise_conv2d partition-tag=two' %s | FileCheck %s --check-prefix=TWO
-// RUN: mlir-opt --tosa-partition='anchor-ops=tosa.depthwise_conv2d trailing-only partition-tag=three' %s | FileCheck %s --check-prefix=THREE
-// RUN: mlir-opt --tosa-partition='anchor-ops=tosa.conv2d partition-tag=four' %s | FileCheck %s --check-prefix=FOUR
+// RUN: rocmlir-opt --tosa-partition %s | FileCheck %s
+// RUN: rocmlir-opt --tosa-partition=partition-tag=one %s | FileCheck %s --check-prefix=ONE
+// RUN: rocmlir-opt --tosa-partition='anchor-ops=tosa.depthwise_conv2d partition-tag=two' %s | FileCheck %s --check-prefix=TWO
+// RUN: rocmlir-opt --tosa-partition='anchor-ops=tosa.depthwise_conv2d trailing-only partition-tag=three' %s | FileCheck %s --check-prefix=THREE
+// RUN: rocmlir-opt --tosa-partition='anchor-ops=tosa.conv2d partition-tag=four' %s | FileCheck %s --check-prefix=FOUR
 
-// RUN: mlir-opt --test-tosa-partition-options=default %s | FileCheck %s --check-prefix=CHECK
-// RUN: mlir-opt --test-tosa-partition-options=depthwise-only %s | FileCheck %s --check-prefix=TWO
-// RUN: mlir-opt --test-tosa-partition-options=conv-only %s | FileCheck %s --check-prefix=FOUR
-// RUN: mlir-opt --test-tosa-partition-options=attr-one %s | FileCheck %s --check-prefix=ONE
-// RUN: mlir-opt --test-tosa-partition-options=nofront-arg %s | FileCheck %s --check-prefix=THREE
+// RUN: rocmlir-opt --test-tosa-partition-options=default %s | FileCheck %s --check-prefix=CHECK
+// RUN: rocmlir-opt --test-tosa-partition-options=depthwise-only %s | FileCheck %s --check-prefix=TWO
+// RUN: rocmlir-opt --test-tosa-partition-options=conv-only %s | FileCheck %s --check-prefix=FOUR
+// RUN: rocmlir-opt --test-tosa-partition-options=attr-one %s | FileCheck %s --check-prefix=ONE
+// RUN: rocmlir-opt --test-tosa-partition-options=nofront-arg %s | FileCheck %s --check-prefix=THREE
 
 // CHECK-LABEL: func private @test_fusion8__part_0
 // CHECK-NEXT: tosa.conv2d

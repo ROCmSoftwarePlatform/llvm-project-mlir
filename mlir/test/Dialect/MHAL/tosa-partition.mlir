@@ -1,4 +1,4 @@
-// RUN: mlir-opt --split-input-file --tosa-partition='trailing-only=false' %s -verify-each=0 -o - | FileCheck %s
+// RUN: rocmlir-opt --split-input-file --tosa-partition='trailing-only=false' %s -verify-each=0 -o - | FileCheck %s
 
 // CHECK-LABEL: func private @test_fusion__part_0
 // CHECK: tosa.conv2d
